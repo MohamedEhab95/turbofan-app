@@ -2,29 +2,28 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --- Page Configuration & Dark Mode Styling ---
+# --- Page Configuration & Light MATLAB-Style Styling ---
 st.set_page_config(
     page_title="Turbofan Cycle Analysis Tool",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Force Dark Mode Styling across Streamlit elements and Matplotlib defaults
-plt.style.use('dark_background')
+# Switch Matplotlib defaults to Light Mode matching MATLAB figures
+plt.style.use('default')
 plt.rcParams.update({
-    "figure.facecolor": "#0b0f19",
-    "axes.facecolor": "#0f172a",
-    "savefig.facecolor": "#0b0f19",
-    "text.color": "#f8fafc",
-    "axes.labelcolor": "#38bdf8",
-    "xtick.color": "#94a3b8",
-    "ytick.color": "#94a3b8",
-    "axes.edgecolor": "#334155"
+    "figure.facecolor": "#f0f2f5",
+    "axes.facecolor": "#ffffff",
+    "savefig.facecolor": "#f0f2f5",
+    "text.color": "#111827",
+    "axes.labelcolor": "#111827",
+    "xtick.color": "#374151",
+    "ytick.color": "#374151",
+    "axes.edgecolor": "#9ca3af"
 })
 
 st.markdown("""
     <style>
-        /* Global Dark Theme Backgrounds */
         .stApp {
             background-color: #0b0f19;
             color: #f8fafc;
@@ -53,7 +52,6 @@ st.markdown("""
             padding: 4px 8px;
             font-size: 13px;
         }
-        /* Table and Code Block Styling for Dark Mode */
         .stTable {
             background-color: #0f172a;
             color: #f8fafc;
@@ -72,7 +70,6 @@ def run_cycle(Alt_ft, Tt5, pi_f, pi_lpc, pi_hpc, BPR, M_a, m_dot_core_sl, LHV, e
     out['F_net'] = float('nan')
     alt_m = Alt_ft * 0.3048
     
-    # Standard Atmosphere Model
     if alt_m <= 11000:
         Ta = 288.15 - 0.0065 * alt_m
         Pa = 101325 * (Ta / 288.15)**5.25588
@@ -184,44 +181,73 @@ def run_cycle(Alt_ft, Tt5, pi_f, pi_lpc, pi_hpc, BPR, M_a, m_dot_core_sl, LHV, e
     
     return out
 
-# --- Helper Functions for Maps and Sweeps ---
+# --- Fan Geometry Calculation Function ---
+def calculate_fan_geometry_and_kinematics(base_out, bpr_val, rpm_fan, mz2_val, nu_hub_tip, ar_blade, gamma_a=1.40, R_a=287):
+    m_dot_fan_total = base_out['m_dot_core'] * (1 + bpr_val)
+    Tt2 = base_out['Tt_K'][1]
+    Pt2 = base_out['Pt_kPa'][1] * 1000
+    
+    T2 = Tt2 / (1 + (gamma_a - 1) / 2 * mz2_val**2)
+    P2 = Pt2 / (1 + (gamma_a - 1) / 2 * mz2_val**2)**(gamma_a / (gamma_a - 1))
+    rho2 = P2 / (R_a * T2)
+    V_z2 = mz2_val * np.sqrt(gamma_a * R_a * T2)
+    a2 = np.sqrt(gamma_a * R_a * T2)
+    
+    A_annulus = m_dot_fan_total / (rho2 * V_z2)
+    D_tip = np.sqrt((4 * A_annulus) / (np.pi * (1 - nu_hub_tip**2)))
+    D_hub = nu_hub_tip * D_tip
+    D_mean = (D_tip + D_hub) / 2
+    h_blade = (D_tip - D_hub) / 2
+    
+    omega = (2 * np.pi * rpm_fan) / 60
+    U_tip = omega * (D_tip / 2)
+    U_mean = omega * (D_mean / 2)
+    
+    M_rel_tip = np.sqrt(V_z2**2 + U_tip**2) / a2
+    M_rel_mean = np.sqrt(V_z2**2 + U_mean**2) / a2
+    c_blade = h_blade / ar_blade
+    
+    return {
+        'D_tip': D_tip, 'D_hub': D_hub, 'D_mean': D_mean, 'h_blade': h_blade,
+        'U_tip': U_tip, 'M_rel_tip': M_rel_tip, 'M_rel_mean': M_rel_mean,
+        'c_blade': c_blade, 'A_annulus': A_annulus
+    }
+
 def get_map_vector(type_str):
     if type_str in ['TIT', 'Turbine Inlet Temp (TIT)']: return np.linspace(1150, 1650, 18), 'TIT (K)'
-    elif type_str in ['\\pi_f', 'Fan Pressure Ratio (\\pi_f)']: return np.linspace(1.2, 2.1, 18), '\\pi_f'
-    elif type_str in ['\\pi_{lpc}', 'LPC Pressure Ratio (\\pi_{lpc})']: return np.linspace(1.1, 2.1, 18), '\\pi_{lpc}'
+    elif type_str in ['\\pi_f', 'Fan Pressure Ratio (\\pi_f)']: return np.linspace(1.2, 2.1, 18), '$\\pi_f$'
+    elif type_str in ['\\pi_{lpc}', 'LPC Pressure Ratio (\\pi_{lpc})']: return np.linspace(1.1, 2.1, 18), '$\\pi_{lpc}$'
     elif type_str in ['BPR', 'Bypass Ratio (BPR)']: return np.linspace(1.5, 8.0, 18), 'BPR'
-    elif type_str in ['\\pi_{hpc}', 'HPC Pressure Ratio', 'HPC Pressure Ratio (\\pi_{hpc})']: return np.linspace(6.0, 18.0, 18), '\\pi_{hpc}'
+    elif type_str in ['\\pi_{hpc}', 'HPC Pressure Ratio', 'HPC Pressure Ratio (\\pi_{hpc})']: return np.linspace(6.0, 18.0, 18), '$\\pi_{hpc}$'
     elif type_str in ['Alt', 'Altitude (Alt)']: return np.linspace(0, 35000, 18), 'Altitude (ft)'
-    elif type_str in ['\\eta_f', 'Fan Efficiency (\\eta_f)']: return np.linspace(0.88, 0.98, 18), '\\eta_f'
-    elif type_str in ['\\eta_{lpc}', 'LPC Efficiency (\\eta_{lpc})']: return np.linspace(0.88, 0.98, 18), '\\eta_{lpc}'
-    elif type_str in ['\\eta_{hpc}', 'HPC Efficiency (\\eta_{hpc})']: return np.linspace(0.88, 0.98, 18), '\\eta_{hpc}'
-    elif type_str in ['\\eta_{hpt}', 'HPT Efficiency (\\eta_{hpt})']: return np.linspace(0.88, 0.98, 18), '\\eta_{hpt}'
-    elif type_str in ['\\eta_{lpt}', 'LPT Efficiency (\\eta_{lpt})']: return np.linspace(0.88, 0.98, 18), '\\eta_{lpt}'
+    elif type_str in ['\\eta_f', 'Fan Efficiency (\\eta_f)']: return np.linspace(0.88, 0.98, 18), '$\\eta_f$'
+    elif type_str in ['\\eta_{lpc}', 'LPC Efficiency (\\eta_{lpc})']: return np.linspace(0.88, 0.98, 18), '$\\eta_{lpc}$'
+    elif type_str in ['\\eta_{hpc}', 'HPC Efficiency (\\eta_{hpc})']: return np.linspace(0.88, 0.98, 18), '$\\eta_{hpc}$'
+    elif type_str in ['\\eta_{hpt}', 'HPT Efficiency (\\eta_{hpt})']: return np.linspace(0.88, 0.98, 18), '$\\eta_{hpt}$'
+    elif type_str in ['\\eta_{lpt}', 'LPT Efficiency (\\eta_{lpt})']: return np.linspace(0.88, 0.98, 18), '$\\eta_{lpt}$'
     return np.linspace(1.0, 2.0, 18), type_str
 
 def plot_styled_contour(ax, X, Y, Z, lblX, lblY, titleStr):
     ax.clear()
     if np.isnan(Z).all():
-        ax.set_title(f"{titleStr} (Out of Bounds)", fontsize=9, fontweight='bold', color='#f8fafc')
+        ax.set_title(f"{titleStr} (Out of Bounds)", fontsize=10, fontweight='bold', color='#111827')
         return
     
-    if "Thrust" in titleStr: cmap_choice = 'CMRmap'
-    elif "TSFC" in titleStr: cmap_choice = 'copper'
-    elif "Thermal" in titleStr: cmap_choice = 'ocean'
-    else: cmap_choice = 'gist_earth'
-
-    cs_fill = ax.contourf(X, Y, Z, levels=15, cmap=cmap_choice, alpha=0.92, antialiased=True)
-    cbar = plt.colorbar(cs_fill, ax=ax)
-    cbar.ax.tick_params(labelsize=6, colors='#cbd5e1')
+    cs_fill = ax.contourf(X, Y, Z, levels=25, cmap='viridis', alpha=0.95, antialiased=True)
+    cbar = plt.colorbar(cs_fill, ax=ax, fraction=0.046, pad=0.04)
+    cbar.ax.tick_params(labelsize=8, colors='#111827')
     
-    cs_lines = ax.contour(X, Y, Z, levels=10, colors='#ffffff', linewidths=0.8, alpha=0.75)
-    ax.clabel(cs_lines, inline=True, fmt='%.2f', fontsize=7, colors='white')
+    cs_lines = ax.contour(X, Y, Z, levels=20, colors='#000000', linewidths=0.9, alpha=0.85)
+    ax.clabel(cs_lines, inline=True, fmt='%.4g', fontsize=7.5, colors='black')
     
-    ax.set_title(titleStr, fontsize=9, fontweight='bold', color='#38bdf8')
-    ax.set_xlabel(lblX, fontsize=8, color='#94a3b8')
-    ax.set_ylabel(lblY, fontsize=8, color='#94a3b8')
-    ax.tick_params(axis='both', labelsize=7, colors='#94a3b8')
-    ax.grid(True, linestyle='--', alpha=0.25, color='#475569')
+    ax.set_title(titleStr, fontsize=11, fontweight='bold', color='#111827')
+    ax.set_xlabel(lblX, fontsize=10, fontweight='bold', color='#111827')
+    ax.set_ylabel(lblY, fontsize=10, fontweight='bold', color='#111827')
+    ax.tick_params(axis='both', labelsize=9, colors='#111827')
+    ax.grid(True, linestyle='--', alpha=0.3, color='#9ca3af')
+    ax.set_facecolor('#ffffff')
+    ax.set_xlim(X.min(), X.max())
+    ax.set_ylim(Y.min(), Y.max())
 
 # --- Sidebar Inputs Control Panel ---
 st.sidebar.title("⚙️ Engine Control Panel")
@@ -245,7 +271,6 @@ with st.sidebar.expander("💨 Fan Aero Sizing", expanded=False):
     mz2_val = st.number_input("Axial Mach Number", value=0.32, step=0.01, format="%.2f")
     ar_val = st.number_input("Blade Aspect Ratio", value=2.5, step=0.1, format="%.2f")
 
-# Constants Initialization
 LHV = 45.0e6
 eta_d = 0.98; eta_f_base = 0.93; eta_lpc_base = 0.93; eta_hpc_base = 0.93
 eta_b = 0.99; pi_b = 0.97; eta_hpt_base = 0.93; eta_lpt_base = 0.93
@@ -253,34 +278,14 @@ eta_mhp = 0.99; eta_mlp = 0.99; eta_fn = 0.98; eta_cn = 0.98
 gamma_a = 1.40; R_a = 287; cp_a = (gamma_a * R_a) / (gamma_a - 1)
 gamma_g = 1.33; R_g = 287; cp_g = (gamma_g * R_g) / (gamma_g - 1)
 
-# Baseline Run
 base = run_cycle(alt_val, tit_val, pif_val, pilpc_val, pihpc_val, bpr_val, ma_val, mcore_val, LHV, eta_d, eta_f_base, eta_lpc_base, eta_hpc_base, eta_b, pi_b, eta_hpt_base, eta_lpt_base, eta_mhp, eta_mlp, eta_fn, eta_cn, gamma_a, R_a, cp_a, gamma_g, R_g, cp_g)
 
 if np.isnan(base['F_net']):
     st.error("The combination of selected baseline parameters resulted in an invalid thermodynamic cycle.")
 else:
-    m_dot_fan_total = base['m_dot_core'] * (1 + bpr_val)
-    Tt2 = base['Tt_K'][2]; Pt2 = base['Pt_kPa'][2] * 1000
-    
-    T2 = Tt2 / (1 + (gamma_a - 1)/2 * mz2_val**2)
-    P2 = Pt2 / (1 + (gamma_a - 1)/2 * mz2_val**2)**(gamma_a / (gamma_a - 1))
-    rho2 = P2 / (R_a * T2)
-    V_z2 = mz2_val * np.sqrt(gamma_a * R_a * T2)
-    a2   = np.sqrt(gamma_a * R_a * T2)
-    
-    A_annulus = m_dot_fan_total / (rho2 * V_z2)
-    D_tip = np.sqrt((4 * A_annulus) / (np.pi * (1 - hub_tip_val**2)))
-    D_hub = hub_tip_val * D_tip
-    D_mean = (D_tip + D_hub) / 2
-    h_blade = (D_tip - D_hub) / 2
-    
-    omega = (2 * np.pi * rpm_val) / 60
-    U_tip  = omega * (D_tip / 2)
-    U_mean = omega * (D_mean / 2)
-    
-    M_rel_tip  = np.sqrt(V_z2**2 + U_tip**2) / a2
-    M_rel_mean = np.sqrt(V_z2**2 + U_mean**2) / a2
-    c_blade = h_blade / ar_val
+    fan_res = calculate_fan_geometry_and_kinematics(base, bpr_val, rpm_val, mz2_val, hub_tip_val, ar_val, gamma_a, R_a)
+    D_tip = fan_res['D_tip']; D_hub = fan_res['D_hub']; D_mean = fan_res['D_mean']; h_blade = fan_res['h_blade']
+    U_tip = fan_res['U_tip']; M_rel_tip = fan_res['M_rel_tip']; M_rel_mean = fan_res['M_rel_mean']; c_blade = fan_res['c_blade']
 
     # --- Tabs Layout ---
     tabSummary, tabProfiles, tabTS, tab1D, tab2D = st.tabs([
@@ -289,30 +294,31 @@ else:
     
     # --- Tab 1: Station Summary ---
     with tabSummary:
-        st.subheader("Engine Stations Diagram")
+        # Side-by-side layout for Schematic and Summary Table
+        col_schematic, col_table = st.columns([1, 1])
         
-        _, col_img, _ = st.columns([1, 2, 1])
-        with col_img:
+        with col_schematic:
+            st.subheader("Standard Turbofan Engine Station Numbering Schematic")
             try:
-                st.image("turbofan_stations.png", caption="Turbofan Engine Station Numbering Schema", use_container_width=True)
-            except Exception:
-                st.info("💡 لظهور الرسم التوضيحي، تأكد من وضع صورة المحطة في نفس مجلد ملف الـ script باسم 'turbofan_stations.png'")
-            
-        st.subheader("Station Summary & Parameters Table")
-        tData = []
-        for i in range(len(base['st_names'])):
-            tData.append({
-                "Station": base['st_names'][i],
-                "Engine Section": base['st_desc'][i],
-                "Pt (kPa)": f"{base['Pt_kPa'][i]:.2f}",
-                "P_static (kPa)": f"{base['P_kPa'][i]:.2f}",
-                "Tt (K)": f"{base['Tt_K'][i]:.2f}",
-                "T_static (K)": f"{base['T_K'][i]:.2f}",
-                "Velocity (m/s)": f"{base['Vel_ms'][i]:.2f}"
-            })
-        st.table(tData)
+                st.image("turbofan_stations.png", use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not load image. Make sure 'turbofan_stations.png' is in the same folder. Error: {e}")
+                
+        with col_table:
+            st.subheader("Station Summary & Parameters Table")
+            tData = []
+            for i in range(len(base['st_names'])):
+                tData.append({
+                    "Station": base['st_names'][i],
+                    "Section": base['st_desc'][i],
+                    "Pt (kPa)": f"{base['Pt_kPa'][i]:.2f}",
+                    "P (kPa)": f"{base['P_kPa'][i]:.2f}",
+                    "Tt (K)": f"{base['Tt_K'][i]:.2f}",
+                    "T (K)": f"{base['T_K'][i]:.2f}",
+                    "V (m/s)": f"{base['Vel_ms'][i]:.2f}"
+                })
+            st.table(tData)
         
-        # CSV Download Button Export Feature
         csv_data = "Station,Engine Section,Pt_kPa,P_static_kPa,Tt_K,T_static_K,Velocity_ms\n"
         for i in range(len(base['st_names'])):
             csv_data += f"{base['st_names'][i]},{base['st_desc'][i]},{base['Pt_kPa'][i]:.2f},{base['P_kPa'][i]:.2f},{base['Tt_K'][i]:.2f},{base['T_K'][i]:.2f},{base['Vel_ms'][i]:.2f}\n"
@@ -357,32 +363,37 @@ else:
         labels_core = [base['st_names'][i] for i in c_idx]
         b_idx = [0, 1, 2, 3]
         
-        fig_prof, (axTemp, axPress) = plt.subplots(2, 1, figsize=(8, 5))
-        
-        axTemp.plot(range(len(c_idx)), base['Tt_K'][c_idx], color='#f43f5e', marker='o', linewidth=1.8, label='Core T_t')
-        axTemp.plot(range(len(c_idx)), base['T_K'][c_idx], color='#fb923c', marker='s', linestyle='--', linewidth=1.4, label='Core T')
-        axTemp.plot(range(len(b_idx)), base['Tt_K'][b_idx], color='#c084fc', marker='^', linestyle='-', linewidth=1.4, label='Bypass T_t,byp')
-        axTemp.set_xticks(range(len(c_idx)))
-        axTemp.set_xticklabels(labels_core, fontsize=8, color='#cbd5e1')
-        axTemp.tick_params(axis='y', labelsize=8, colors='#cbd5e1')
-        axTemp.grid(True, linestyle='--', alpha=0.3, color='#475569')
-        axTemp.set_title('Temperature Variation Across Engine Stations', fontsize=10, fontweight='bold', color='#38bdf8')
-        axTemp.set_ylabel('Temperature (K)', fontsize=8, color='#38bdf8')
-        axTemp.legend(fontsize=7, facecolor='#0f172a', edgecolor='#334155', labelcolor='#f8fafc')
-        
-        axPress.plot(range(len(c_idx)), base['Pt_kPa'][c_idx], color='#38bdf8', marker='o', linewidth=1.8, label='Core P_t')
-        axPress.plot(range(len(c_idx)), base['P_kPa'][c_idx], color='#38bdf8', marker='s', linestyle='--', linewidth=1.4, label='Core P')
-        axPress.plot(range(len(b_idx)), base['Pt_kPa'][b_idx], color='#2dd4bf', marker='^', linestyle='-', linewidth=1.4, label='Bypass P_t,byp')
-        axPress.set_xticks(range(len(c_idx)))
-        axPress.set_xticklabels(labels_core, fontsize=8, color='#cbd5e1')
-        axPress.tick_params(axis='y', labelsize=8, colors='#cbd5e1')
-        axPress.grid(True, linestyle='--', alpha=0.3, color='#475569')
-        axPress.set_title('Pressure Variation Across Engine Stations', fontsize=10, fontweight='bold', color='#38bdf8')
-        axPress.set_ylabel('Pressure (kPa)', fontsize=8, color='#38bdf8')
-        axPress.legend(fontsize=7, facecolor='#0f172a', edgecolor='#334155', labelcolor='#f8fafc')
-        
-        plt.tight_layout()
-        st.pyplot(fig_prof)
+        col_left, col_center, col_right = st.columns([1, 4, 1])
+        with col_center:
+            fig_prof, (axTemp, axPress) = plt.subplots(2, 1, figsize=(6, 4.5), constrained_layout=True, facecolor='none')
+            
+            axTemp.plot(range(len(c_idx)), base['Tt_K'][c_idx], color='#e11d48', marker='o', linewidth=1.5, label='Core T_t')
+            axTemp.plot(range(len(c_idx)), base['T_K'][c_idx], color='#f97316', marker='s', linestyle='--', linewidth=1.2, label='Core T')
+            axTemp.plot(range(len(b_idx)), base['Tt_K'][b_idx], color='#9333ea', marker='^', linestyle='-', linewidth=1.2, label='Bypass T_t,byp')
+            axTemp.set_xticks(range(len(c_idx)))
+            axTemp.set_xticklabels(labels_core, fontsize=7.5, color='#111827')
+            axTemp.tick_params(axis='y', labelsize=7.5, colors='#111827')
+            axTemp.grid(True, linestyle='--', alpha=0.3, color='#9ca3af')
+            axTemp.set_title('Temperature Variation Across Engine Stations', fontsize=9.5, fontweight='bold', color='#111827')
+            axTemp.set_ylabel('Temperature (K)', fontsize=7.5, color='#111827')
+            axTemp.legend(fontsize=6.5, facecolor='#ffffff', edgecolor='#9ca3af', labelcolor='#111827')
+            axTemp.set_facecolor('#ffffff')
+            axTemp.set_xlim(-0.5, len(c_idx) - 0.5)
+            
+            axPress.plot(range(len(c_idx)), base['Pt_kPa'][c_idx], color='#0284c7', marker='o', linewidth=1.5, label='Core P_t')
+            axPress.plot(range(len(c_idx)), base['P_kPa'][c_idx], color='#0284c7', marker='s', linestyle='--', linewidth=1.2, label='Core P')
+            axPress.plot(range(len(b_idx)), base['Pt_kPa'][b_idx], color='#0d9488', marker='^', linestyle='-', linewidth=1.2, label='Bypass P_t,byp')
+            axPress.set_xticks(range(len(c_idx)))
+            axPress.set_xticklabels(labels_core, fontsize=7.5, color='#111827')
+            axPress.tick_params(axis='y', labelsize=7.5, colors='#111827')
+            axPress.grid(True, linestyle='--', alpha=0.3, color='#9ca3af')
+            axPress.set_title('Pressure Variation Across Engine Stations', fontsize=9.5, fontweight='bold', color='#111827')
+            axPress.set_ylabel('Pressure (kPa)', fontsize=7.5, color='#111827')
+            axPress.legend(fontsize=6.5, facecolor='#ffffff', edgecolor='#9ca3af', labelcolor='#111827')
+            axPress.set_facecolor('#ffffff')
+            axPress.set_xlim(-0.5, len(c_idx) - 0.5)
+            
+            st.pyplot(fig_prof, use_container_width=True)
 
     # --- Tab 3: T-s Diagram ---
     with tabTS:
@@ -402,16 +413,21 @@ else:
         for i in range(1, len(b_idx)):
             s_byp[i] = s_byp[i-1] + cp_a * np.log(T_byp[i]/T_byp[i-1]) - R_a * np.log(P_byp[i]/P_byp[i-1])
             
-        fig_ts, axTS = plt.subplots(figsize=(7, 4))
-        axTS.plot(s_core, T_core, color='#fb7185', marker='o', linewidth=1.8, label='Core Flow Path')
-        axTS.plot(s_byp, T_byp, color='#60a5fa', marker='s', linestyle='--', linewidth=1.6, label='Bypass Flow Path')
-        axTS.grid(True, linestyle='--', alpha=0.3, color='#475569')
-        axTS.set_title('Temperature–Entropy (T–s) Diagram', fontsize=10, fontweight='bold', color='#38bdf8')
-        axTS.set_xlabel('Delta s (J/kg·K)', fontsize=8, fontweight='bold', color='#38bdf8')
-        axTS.set_ylabel('Total Temperature T_t (K)', fontsize=8, fontweight='bold', color='#38bdf8')
-        axTS.tick_params(axis='both', labelsize=8, colors='#cbd5e1')
-        axTS.legend(fontsize=8, facecolor='#0f172a', edgecolor='#334155', labelcolor='#f8fafc')
-        st.pyplot(fig_ts)
+        col_left, col_center, col_right = st.columns([1, 4, 1])
+        with col_center:
+            fig_ts, axTS = plt.subplots(figsize=(6, 4.0), constrained_layout=True, facecolor='none')
+            axTS.plot(s_core, T_core, color='#e11d48', marker='o', linewidth=1.5, label='Core Flow Path')
+            axTS.plot(s_byp, T_byp, color='#2563eb', marker='s', linestyle='--', linewidth=1.3, label='Bypass Flow Path')
+            axTS.grid(True, linestyle='--', alpha=0.3, color='#9ca3af')
+            axTS.set_title('Temperature–Entropy (T–s) Diagram', fontsize=9.5, fontweight='bold', color='#111827')
+            axTS.set_xlabel('Delta s (J/kg·K)', fontsize=7.5, fontweight='bold', color='#111827')
+            axTS.set_ylabel('Total Temperature T_t (K)', fontsize=7.5, fontweight='bold', color='#111827')
+            axTS.tick_params(axis='both', labelsize=7.5, colors='#111827')
+            axTS.legend(fontsize=7, facecolor='#ffffff', edgecolor='#9ca3af', labelcolor='#111827')
+            axTS.set_facecolor('#ffffff')
+            axTS.set_xlim(s_core.min(), s_core.max())
+            
+            st.pyplot(fig_ts, use_container_width=True)
 
     # --- Tab 4: 1D Sweeps ---
     with tab1D:
@@ -460,26 +476,30 @@ else:
             else:
                 res_F.append(out['F_net']/1000); res_TSFC.append(out['TSFC']); res_th.append(out['eta_th']); res_p.append(out['eta_p']); res_o.append(out['eta_o'])
                 
-        fig_1d, axs = plt.subplots(2, 3, figsize=(11, 5))
-        axs[0, 0].plot(s_range, res_F, color='#38bdf8', linewidth=1.8); axs[0, 0].grid(True, alpha=0.3); axs[0, 0].set_title('Thrust (kN)', fontsize=9, fontweight='bold', color='#38bdf8'); axs[0, 0].set_xlabel(x_lbl, fontsize=8, color='#94a3b8'); axs[0, 0].tick_params(labelsize=7, colors='#94a3b8')
-        axs[0, 1].plot(s_range, res_TSFC, color='#f87171', linewidth=1.8); axs[0, 1].grid(True, alpha=0.3); axs[0, 1].set_title('TSFC (mg/N/s)', fontsize=9, fontweight='bold', color='#38bdf8'); axs[0, 1].set_xlabel(x_lbl, fontsize=8, color='#94a3b8'); axs[0, 1].tick_params(labelsize=7, colors='#94a3b8')
-        axs[0, 2].plot(s_range, res_th, color='#4ade80', linewidth=1.8); axs[0, 2].grid(True, alpha=0.3); axs[0, 2].set_title('Thermal Eff. (%)', fontsize=9, fontweight='bold', color='#38bdf8'); axs[0, 2].set_xlabel(x_lbl, fontsize=8, color='#94a3b8'); axs[0, 2].tick_params(labelsize=7, colors='#94a3b8')
-        axs[1, 0].plot(s_range, res_p, color='#c084fc', linewidth=1.8); axs[1, 0].grid(True, alpha=0.3); axs[1, 0].set_title('Propulsive Eff. (%)', fontsize=9, fontweight='bold', color='#38bdf8'); axs[1, 0].set_xlabel(x_lbl, fontsize=8, color='#94a3b8'); axs[1, 0].tick_params(labelsize=7, colors='#94a3b8')
-        axs[1, 1].plot(s_range, res_o, color='#2dd4bf', linewidth=1.8); axs[1, 1].grid(True, alpha=0.3); axs[1, 1].set_title('Overall Eff. (%)', fontsize=9, fontweight='bold', color='#38bdf8'); axs[1, 1].set_xlabel(x_lbl, fontsize=8, color='#94a3b8'); axs[1, 1].tick_params(labelsize=7, colors='#94a3b8')
+        fig_1d, axs = plt.subplots(2, 3, figsize=(11, 5), constrained_layout=True, facecolor='none')
+        for ax_row in axs:
+            for ax in ax_row:
+                ax.set_facecolor('#ffffff')
+                ax.set_xlim(s_range.min(), s_range.max())
+                
+        axs[0, 0].plot(s_range, res_F, color='#0284c7', linewidth=1.8); axs[0, 0].grid(True, alpha=0.3); axs[0, 0].set_title('Thrust (kN)', fontsize=9, fontweight='bold', color='#111827'); axs[0, 0].set_xlabel(x_lbl, fontsize=8, color='#111827'); axs[0, 0].tick_params(labelsize=7, colors='#111827')
+        axs[0, 1].plot(s_range, res_TSFC, color='#dc2626', linewidth=1.8); axs[0, 1].grid(True, alpha=0.3); axs[0, 1].set_title('TSFC (mg/N/s)', fontsize=9, fontweight='bold', color='#111827'); axs[0, 1].set_xlabel(x_lbl, fontsize=8, color='#111827'); axs[0, 1].tick_params(labelsize=7, colors='#111827')
+        axs[0, 2].plot(s_range, res_th, color='#16a34a', linewidth=1.8); axs[0, 2].grid(True, alpha=0.3); axs[0, 2].set_title('Thermal Eff. (%)', fontsize=9, fontweight='bold', color='#111827'); axs[0, 2].set_xlabel(x_lbl, fontsize=8, color='#111827'); axs[0, 2].tick_params(labelsize=7, colors='#111827')
+        axs[1, 0].plot(s_range, res_p, color='#9333ea', linewidth=1.8); axs[1, 0].grid(True, alpha=0.3); axs[1, 0].set_title('Propulsive Eff. (%)', fontsize=9, fontweight='bold', color='#111827'); axs[1, 0].set_xlabel(x_lbl, fontsize=8, color='#111827'); axs[1, 0].tick_params(labelsize=7, colors='#111827')
+        axs[1, 1].plot(s_range, res_o, color='#0d9488', linewidth=1.8); axs[1, 1].grid(True, alpha=0.3); axs[1, 1].set_title('Overall Eff. (%)', fontsize=9, fontweight='bold', color='#111827'); axs[1, 1].set_xlabel(x_lbl, fontsize=8, color='#111827'); axs[1, 1].tick_params(labelsize=7, colors='#111827')
         axs[1, 2].axis('off')
-        plt.tight_layout()
         st.pyplot(fig_1d)
 
     # --- Tab 5: 2D Contour Maps ---
     with tab2D:
-        st.subheader("2D Performance Contour Maps")
+        st.subheader("2D Performance Contour Maps (MATLAB Style Layout)")
         colX, colY = st.columns(2)
         items2D = ['TIT', '\\pi_f', '\\pi_{lpc}', 'BPR', '\\pi_{hpc}', 'Alt', '\\eta_f', '\\eta_{lpc}', '\\eta_{hpc}', '\\eta_{hpt}', '\\eta_{lpt}']
         
         with colX:
-            varX = st.selectbox("X-Axis Parameter:", items2D, index=0)
+            varX = st.selectbox("X-Axis Parameter:", items2D, index=1)
         with colY:
-            varY = st.selectbox("Y-Axis Parameter:", items2D, index=1)
+            varY = st.selectbox("Y-Axis Parameter:", items2D, index=5)
             
         vecX, lblX = get_map_vector(varX)
         vecY, lblY = get_map_vector(varY)
@@ -529,11 +549,10 @@ else:
                     Z_th[j, i] = out['eta_th']
                     Z_o[j, i] = out['eta_o']
                     
-        fig_2d, axs_2d = plt.subplots(2, 2, figsize=(9, 7))
+        fig_2d, axs_2d = plt.subplots(2, 2, figsize=(10, 8), constrained_layout=True, facecolor='none')
         plot_styled_contour(axs_2d[0, 0], X_mesh, Y_mesh, Z_F, lblX, lblY, 'Net Thrust (kN)')
         plot_styled_contour(axs_2d[0, 1], X_mesh, Y_mesh, Z_TSFC, lblX, lblY, 'TSFC (mg/N/s)')
         plot_styled_contour(axs_2d[1, 0], X_mesh, Y_mesh, Z_th, lblX, lblY, 'Thermal Efficiency (%)')
         plot_styled_contour(axs_2d[1, 1], X_mesh, Y_mesh, Z_o, lblX, lblY, 'Overall Efficiency (%)')
         
-        plt.tight_layout()
         st.pyplot(fig_2d)
