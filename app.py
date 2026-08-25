@@ -330,31 +330,52 @@ else:
         )
         
         st.subheader("Detailed Performance & Sizing Output")
-        perfText = (
-            f"Ambient Conditions         : Altitude: {alt_val:.0f} ft | Pa: {base['Pa']/1000:.2f} kPa | Ta: {base['Ta']:.2f} K\n"
-            f"Actual Operating Mass Flow  : Core: {base['m_dot_core']:.3f} kg/s | Total: {base['m_dot_core']*(1+bpr_val):.3f} kg/s\n"
-            f"--- Fan Geometry & Aerodynamics ---\n"
-            f"Fan Tip Diameter (D_tip)    : {D_tip:.4f} m ({D_tip*39.3701:.2f} in)\n"
-            f"Fan Hub Diameter (D_hub)    : {D_hub:.4f} m ({D_hub*39.3701:.2f} in)\n"
-            f"Fan Mean Diameter (D_mean)  : {D_mean:.4f} m ({D_mean*39.3701:.2f} in)\n"
-            f"Fan Blade Height (h)        : {h_blade:.4f} m ({h_blade*39.3701:.2f} in)\n"
-            f"Blade Aspect Ratio (AR)     : {ar_val:.2f} | Blade Chord: {c_blade:.4f} m\n"
-            f"--- Kinematics & Aerodynamic Speed (RPM: {rpm_val:.0f}) ---\n"
-            f"Blade Tip Speed (U_tip)     : {U_tip:.2f} m/s\n"
-            f"Tip Relative Mach (M_rel,tip): {M_rel_tip:.3f}\n"
-            f"Mean Relative Mach (M_rel,m) : {M_rel_mean:.3f}\n"
-            f"--- Thrust Components ---\n"
-            f"Core Gross Thrust           : {base['F_core']:.2f} N ({base['F_core']/1000:.2f} kN)\n"
-            f"Bypass Gross Thrust         : {base['F_byp']:.2f} N ({base['F_byp']/1000:.2f} kN)\n"
-            f"Ram Drag                    : {base['F_ram']:.2f} N ({base['F_ram']/1000:.2f} kN)\n"
-            f"Net Thrust (F_net)          : {base['F_net']:.2f} N ({base['F_net']/1000:.2f} kN)\n"
-            f"--- Engine Performance ---\n"
-            f"Specific Thrust (Total Air) : {base['F_spec_total']:.4f} N/(kg/s)\n"
-            f"TSFC                        : {base['TSFC']:.4f} mg/N/s | SFC: {base['SFC']:.4f} kg/(kN·h)\n"
-            f"Fuel Flow Rate (m_dot_fuel) : {base['m_dot_fuel']:.4f} kg/s   | f: {base['f']:.4f}\n"
-            f"Efficiencies                : Thermal: {base['eta_th']:.2f}% | Propulsive: {base['eta_p']:.2f}% | Overall: {base['eta_o']:.2f}%"
-        )
-        st.code(perfText, language="text")
+        
+        # Categorized Tables for Performance & Sizing Output
+        perf_categories = {
+            "🌍 Ambient Conditions": [
+                {"Parameter": "Altitude", "Value": f"{alt_val:.0f}", "Unit": "ft"},
+                {"Parameter": "Ambient Pressure (Pa)", "Value": f"{base['Pa']/1000:.2f}", "Unit": "kPa"},
+                {"Parameter": "Ambient Temperature (Ta)", "Value": f"{base['Ta']:.2f}", "Unit": "K"}
+            ],
+            "💨 Mass Flow Rates": [
+                {"Parameter": "Core Mass Flow", "Value": f"{base['m_dot_core']:.3f}", "Unit": "kg/s"},
+                {"Parameter": "Total Mass Flow", "Value": f"{base['m_dot_core']*(1+bpr_val):.3f}", "Unit": "kg/s"},
+                {"Parameter": "Fuel Flow Rate", "Value": f"{base['m_dot_fuel']:.4f}", "Unit": "kg/s"},
+                {"Parameter": "Fuel-Air Ratio (f)", "Value": f"{base['f']:.4f}", "Unit": "-"}
+            ],
+            "📐 Fan Geometry & Aerodynamics": [
+                {"Parameter": "Fan Tip Diameter (D_tip)", "Value": f"{D_tip:.4f} ({D_tip*39.3701:.2f})", "Unit": "m (in)"},
+                {"Parameter": "Fan Hub Diameter (D_hub)", "Value": f"{D_hub:.4f} ({D_hub*39.3701:.2f})", "Unit": "m (in)"},
+                {"Parameter": "Fan Mean Diameter (D_mean)", "Value": f"{D_mean:.4f} ({D_mean*39.3701:.2f})", "Unit": "m (in)"},
+                {"Parameter": "Fan Blade Height (h)", "Value": f"{h_blade:.4f} ({h_blade*39.3701:.2f})", "Unit": "m (in)"},
+                {"Parameter": "Blade Aspect Ratio (AR)", "Value": f"{ar_val:.2f}", "Unit": "-"},
+                {"Parameter": "Blade Chord", "Value": f"{c_blade:.4f}", "Unit": "m"}
+            ],
+            "⚡ Kinematics & Speed (RPM: {0})".format(f"{rpm_val:.0f}"): [
+                {"Parameter": "Blade Tip Speed (U_tip)", "Value": f"{U_tip:.2f}", "Unit": "m/s"},
+                {"Parameter": "Tip Relative Mach (M_rel,tip)", "Value": f"{M_rel_tip:.3f}", "Unit": "-"},
+                {"Parameter": "Mean Relative Mach (M_rel,m)", "Value": f"{M_rel_mean:.3f}", "Unit": "-"}
+            ],
+            "🚀 Thrust Components": [
+                {"Parameter": "Core Gross Thrust", "Value": f"{base['F_core']:.2f} ({base['F_core']/1000:.2f})", "Unit": "N (kN)"},
+                {"Parameter": "Bypass Gross Thrust", "Value": f"{base['F_byp']:.2f} ({base['F_byp']/1000:.2f})", "Unit": "N (kN)"},
+                {"Parameter": "Ram Drag", "Value": f"{base['F_ram']:.2f} ({base['F_ram']/1000:.2f})", "Unit": "N (kN)"},
+                {"Parameter": "Net Thrust (F_net)", "Value": f"{base['F_net']:.2f} ({base['F_net']/1000:.2f})", "Unit": "N (kN)"}
+            ],
+            "📈 Engine Performance & Efficiencies": [
+                {"Parameter": "Specific Thrust (Total Air)", "Value": f"{base['F_spec_total']:.4f}", "Unit": "N/(kg/s)"},
+                {"Parameter": "TSFC", "Value": f"{base['TSFC']:.4f}", "Unit": "mg/N/s"},
+                {"Parameter": "SFC", "Value": f"{base['SFC']:.4f}", "Unit": "kg/(kN·h)"},
+                {"Parameter": "Thermal Efficiency", "Value": f"{base['eta_th']:.2f}", "Unit": "%"},
+                {"Parameter": "Propulsive Efficiency", "Value": f"{base['eta_p']:.2f}", "Unit": "%"},
+                {"Parameter": "Overall Efficiency", "Value": f"{base['eta_o']:.2f}", "Unit": "%"}
+            ]
+        }
+        
+        for category, rows in perf_categories.items():
+            with st.expander(category, expanded=True):
+                st.table(rows)
 
     # --- Tab 2: Station Profiles ---
     with tabProfiles:
